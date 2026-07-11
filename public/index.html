@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Canva Design Score API</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main>
+    <div class="eyebrow">CANVA DESIGN SCORE</div>
+    <h1>프레젠테이션 디자인을<br><span>페이지별로 정밀 평가합니다.</span></h1>
+    <p class="lead">Canva 슬라이드를 브라우저에서 가벼운 PNG로 변환하고, GPT-5.6 Luna 또는 Terra가 시각적 위계·레이아웃·색상·타이포그래피·일관성을 100점 기준으로 분석합니다.</p>
+    <section class="status-card">
+      <div><span id="dot" class="dot"></span><strong id="status">API 상태 확인 중</strong></div>
+      <code id="endpoint">/api/health</code>
+    </section>
+    <section class="grid">
+      <article><b>01</b><h2>PNG 캡처</h2><p>긴 Canva DOM 전체를 보내지 않고 실제 렌더 결과만 전송합니다.</p></article>
+      <article><b>02</b><h2>다중 기준 채점</h2><p>페이지별 점수와 근거, 우선 수정 항목을 구조화된 JSON으로 받습니다.</p></article>
+      <article><b>03</b><h2>키 보호</h2><p>OpenAI 키는 Cloudflare의 Secret에만 보관합니다.</p></article>
+    </section>
+    <footer>Chrome/Edge 확장 프로그램과 함께 사용하는 API 서버입니다.</footer>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
+
