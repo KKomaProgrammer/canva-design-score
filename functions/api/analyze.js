@@ -35,10 +35,12 @@ const slideSchema = {
 const outputSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["deck_score", "deck_grade", "summary", "consistency_review", "top_actions", "slides"],
+  required: ["deck_score", "deck_grade", "short_review", "quick_improvements", "summary", "consistency_review", "top_actions", "slides"],
   properties: {
     deck_score: { type: "number", minimum: 0, maximum: 100 },
     deck_grade: { type: "string", enum: ["S", "A", "B", "C", "D", "F"] },
+    short_review: { type: "string", minLength: 10, maxLength: 180 },
+    quick_improvements: { type: "array", minItems: 2, maxItems: 4, items: { type: "string", maxLength: 90 } },
     summary: { type: "string" },
     consistency_review: { type: "string" },
     top_actions: { type: "array", minItems: 2, maxItems: 6, items: { type: "string" } },
@@ -101,6 +103,8 @@ export async function onRequestPost({ request, env }) {
       "각 페이지를 100점으로 채점하라. 배점은 시각적 위계·가독성 20, 레이아웃·정렬·여백 20, 색상·대비 15, 타이포그래피 15, 페이지 간 시각 일관성 15, 정보 밀도·명료성 10, 마감·독창성 5다.",
       "점수 인플레이션을 피한다. 90점 이상은 실제 공개·발표에 바로 써도 될 정도로 예외적으로 완성된 경우에만 준다. 80점은 강한 결과물, 70점은 양호하지만 수정 필요, 60점은 평균적, 50점 이하는 명백한 문제로 해석한다.",
       "모호한 칭찬을 피하고 화면에서 확인되는 근거를 쓴다. 수정 제안은 위치·크기·간격·색·서체·정렬처럼 실행 가능하게 쓴다. 작은 글자가 완전히 판독되지 않으면 추측하지 말고 가독성/밀도 관점만 평가한다.",
+      "short_review에는 전체 점수와 디자인의 실제 상태에 어울리는 자연스러운 한국어 총평을 1~2문장으로 간결하게 쓴다. 상투적인 고정 문구를 반복하지 말고, 강점과 완성도 또는 부족한 정도가 말투에서도 분명히 느껴지게 한다.",
+      "quick_improvements에는 전체 프레젠테이션에서 가장 효과가 큰 개선점 2~4개를 각각 짧고 구체적인 한 문장으로 쓴다.",
       "deck_score는 페이지 평균과 페이지 간 일관성을 함께 반영한다. 모든 응답은 한국어로 작성한다."
     ].join("\n");
 
@@ -136,4 +140,3 @@ export async function onRequestPost({ request, env }) {
     return json({ error: status === 400 ? "요청 JSON이 올바르지 않습니다." : `서버 오류: ${error.message}` }, status, headers);
   }
 }
-
