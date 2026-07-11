@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="popup.css"><title>Canva Design Score</title></head>
+<body>
+  <header><div class="mark">DS</div><div><h1>Canva Design Score</h1><p>프레젠테이션 디자인 완성도 평가</p></div></header>
+  <section class="settings">
+    <label>API 주소<input id="endpoint" type="url" placeholder="https://canva-design-score.pages.dev/api/analyze"></label>
+    <label>Access Token<input id="token" type="password" placeholder="Cloudflare에 설정한 토큰"></label>
+    <div class="row"><label>모델<select id="model"><option value="gpt-5.6-luna">GPT-5.6 Luna · 기본</option><option value="gpt-5.6-terra">GPT-5.6 Terra · 정밀</option></select></label><label>PNG 폭<select id="width"><option value="720">720px · 절약</option><option value="960" selected>960px · 권장</option><option value="1280">1280px · 고화질</option></select></label></div>
+    <button id="save" class="quiet">설정 저장</button>
+  </section>
+  <button id="analyze" class="primary">현재 프레젠테이션 평가</button>
+  <div id="progress" class="progress hidden"><div class="bar"><i></i></div><p>준비 중</p></div>
+  <section id="result" class="result hidden"></section>
+  <p id="error" class="error hidden"></p>
+  <script src="popup.js"></script>
+</body></html>
+
