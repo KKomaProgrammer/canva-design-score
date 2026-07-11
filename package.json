@@ -1,0 +1,10 @@
+{
+  "name": "canva-design-score",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check functions/api/analyze.js && node --check functions/api/health.js && node --check public/app.js && node --check extension/service-worker.js && node --check extension/content.js && node --check extension/popup.js",
+    "zip": "cd extension && zip -r ../canva-design-score-extension.zip . -x '*.DS_Store'"
+  }
+}
