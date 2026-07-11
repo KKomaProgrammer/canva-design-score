@@ -26,7 +26,7 @@ function list(items) { return `<ul>${(items || []).map(item => `<li>${escapeHtml
 
 function renderResult(data) {
   const target = $("#result");
-  target.innerHTML = `<div class="score"><div><span>DECK SCORE · ${escapeHtml(data.deck_grade)}</span><br><strong>${Math.round(data.deck_score)}</strong></div><span>${escapeHtml(data.model || "")}</span></div><p class="summary">${escapeHtml(data.summary)}</p><h3>가장 먼저 고칠 것</h3><ol class="actions">${(data.top_actions || []).map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ol>${(data.slides || []).map(slide => `<details class="slide"><summary>${slide.page}페이지 · ${Math.round(slide.score)}점 · ${escapeHtml(slide.grade)}</summary><div><b>문제</b>${list(slide.issues)}<b>우선 수정</b>${list(slide.priority_fixes)}<b>강점</b>${list(slide.strengths)}</div></details>`).join("")}`;
+  target.innerHTML = `<div class="score"><div><span>DECK SCORE · ${escapeHtml(data.deck_grade)}</span><br><strong>${Math.round(data.deck_score)}</strong></div><span>${escapeHtml(data.model || "")}</span></div><p class="short-review">${escapeHtml(data.short_review || data.summary)}</p><div class="quick-fixes"><b>간결한 개선점</b>${list(data.quick_improvements || data.top_actions?.slice(0, 3) || [])}</div><details class="full-review"><summary>상세 전체 평가 보기</summary><p class="summary">${escapeHtml(data.summary)}</p><h3>가장 먼저 고칠 것</h3><ol class="actions">${(data.top_actions || []).map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ol></details>${(data.slides || []).map(slide => `<details class="slide"><summary>${slide.page}페이지 · ${Math.round(slide.score)}점 · ${escapeHtml(slide.grade)}</summary><div><b>문제</b>${list(slide.issues)}<b>우선 수정</b>${list(slide.priority_fixes)}<b>강점</b>${list(slide.strengths)}</div></details>`).join("")}`;
   target.classList.remove("hidden");
 }
 
@@ -72,4 +72,3 @@ $("#analyze").addEventListener("click", async () => {
 });
 
 loadSettings().then(poll);
-
