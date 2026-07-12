@@ -101,9 +101,9 @@ function bufferToBase64(buffer) {
 }
 
 function automaticImageWidth(pageCount) {
-  const calculated = 1280 * Math.sqrt(6 / Math.max(1, pageCount));
-  const limited = Math.max(512, Math.min(1280, calculated));
-  return Math.max(512, Math.floor(limited / 32) * 32);
+  const calculated = 768 * Math.sqrt(3 / Math.max(1, pageCount));
+  const limited = Math.max(320, Math.min(768, calculated));
+  return Math.max(320, Math.floor(limited / 32) * 32);
 }
 
 async function captureVisibleTabSafely(windowId) {
