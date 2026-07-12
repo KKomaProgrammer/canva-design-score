@@ -108,6 +108,17 @@ button {
   opacity: 0.55;
   cursor: wait;
 }
+.export {
+  width: 100%;
+  height: 42px;
+  margin-top: 12px;
+  border: 1px solid #cfc4f2;
+  color: #432d86;
+  background: #eee9ff;
+}
+.export:hover {
+  background: #e2d9ff;
+}
 .progress {
   padding: 14px 2px 4px;
 }
