@@ -71,13 +71,18 @@ select {
   font: inherit;
   font-weight: 500;
 }
-.row {
-  display: grid;
-  grid-template-columns: 1.15fr 0.85fr;
-  gap: 8px;
-}
-.row label {
+.auto-size {
   margin: 0;
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: #f5f2ff;
+  color: #666079;
+  font-size: 10px;
+  line-height: 1.45;
+}
+.auto-size code {
+  color: var(--accent2);
+  font-weight: 800;
 }
 button {
   border: 0;
