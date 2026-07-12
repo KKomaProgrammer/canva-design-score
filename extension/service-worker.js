@@ -114,9 +114,11 @@ async function captureVisibleTabSafely(windowId) {
       lastCaptureAt = Date.now();
       return await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
     } catch (error) {
-      const isQuotaError = /MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND|quota/i.test(error.message || String(error));
-      if (!isQuotaError || attempt === 4) throw error;
-      await sleep(1000 * (attempt + 1));
+      const message = error.message || String(error);
+      const isQuotaError = /MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND|quota/i.test(message);
+      const hasNoActiveContents = /No active web contents to capture/i.test(message);
+      if ((!isQuotaError && !hasNoActiveContents) || attempt === 4) throw error;
+      await sleep((hasNoActiveContents ? 700 : 1000) * (attempt + 1));
     }
   }
   throw new Error("화면 캡처 호출 제한으로 이미지를 가져오지 못했습니다.");
@@ -141,6 +143,25 @@ async function cropScreenshot(dataUrl, rect, targetWidth) {
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = "high";
   context.drawImage(bitmap, sx, sy, sw, sh, 0, 0, width, height);
+  bitmap.close();
+  const png = await canvas.convertToBlob({ type: "image/png" });
+  return `data:image/png;base64,${bufferToBase64(await png.arrayBuffer())}`;
+}
+
+async function sourceImageToPng(imageSrc, targetWidth) {
+  if (!imageSrc) throw new Error("img 원본 주소가 없습니다.");
+  const response = await fetch(imageSrc, { credentials: "include", cache: "force-cache" });
+  if (!response.ok) throw new Error(`img 원본 요청 실패 (${response.status})`);
+  const bitmap = await createImageBitmap(await response.blob());
+  const width = targetWidth;
+  const height = Math.max(1, Math.round(bitmap.height * width / bitmap.width));
+  const canvas = new OffscreenCanvas(width, height);
+  const context = canvas.getContext("2d", { alpha: false });
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, width, height);
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(bitmap, 0, 0, width, height);
   bitmap.close();
   const png = await canvas.convertToBlob({ type: "image/png" });
   return `data:image/png;base64,${bufferToBase64(await png.arrayBuffer())}`;
@@ -175,8 +196,18 @@ async function captureSlides(tab) {
       images.push(exported.dataUrl);
       continue;
     }
+    if (exported?.imageSrc) {
+      try {
+        images.push(await sourceImageToPng(exported.imageSrc, targetWidth));
+        continue;
+      } catch (sourceError) {
+        console.warn(`Canva Design Score ${index + 1}페이지 원본 img 변환 실패`, sourceError);
+      }
+    }
     const rect = exported?.fallbackRect;
     if (!rect) throw new Error(`${index + 1}페이지의 첫 번째 img를 PNG로 변환하지 못했습니다.`);
+    await chrome.runtime.sendMessage({ type: "CLOSE_POPUP_FOR_CAPTURE" }).catch(() => {});
+    await sleep(500);
     await sleep(120);
     if (rect.x < -2 || rect.y < -2 || rect.x + rect.width > rect.viewportWidth + 2 || rect.y + rect.height > rect.viewportHeight + 2) {
       throw new Error(`${index + 1}페이지의 첫 번째 img가 화면에 완전히 보이지 않아 대체 캡처할 수 없습니다.`);
