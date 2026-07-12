@@ -1,7 +1,13 @@
 <!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="popup.css"><title>Canva Design Score</title></head>
 <body>
-  <header><div class="mark">DS</div><div><h1>Canva Design Score</h1><p>프레젠테이션 디자인 완성도 평가</p></div></header>
+  <header class="app-header"><div class="mark">DS</div><div><h1>Canva Design Score</h1><p>프레젠테이션 디자인 완성도 평가</p></div><button id="historyButton" class="history-button" title="분석 기록" aria-label="분석 기록"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg></button></header>
+  <div id="historyOverlay" class="history-overlay" aria-hidden="true">
+    <aside class="history-panel">
+      <div class="history-head"><div><b>분석 기록</b><span>저장된 프레젠테이션</span></div><div class="history-actions"><button id="deleteAllHistory" class="delete-all">모두 삭제</button><button id="closeHistory" class="icon-button" aria-label="기록 닫기"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div></div>
+      <div id="historyList" class="history-list"></div>
+    </aside>
+  </div>
   <section class="settings">
     <label>API 주소<input id="endpoint" type="url" placeholder="https://canva-design-score.pages.dev/api/analyze"></label>
     <label>Access Token<input id="token" type="password" placeholder="Cloudflare에 설정한 토큰"></label>
