@@ -1,4 +1,6 @@
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const MIN_CAPTURE_INTERVAL_MS = 850;
+let lastCaptureAt = 0;
 
 async function setState(state) {
   await chrome.storage.local.set({ analysisState: { updatedAt: Date.now(), ...state } });
@@ -21,6 +23,22 @@ function automaticImageWidth(pageCount) {
   const calculated = 1280 * Math.sqrt(6 / Math.max(1, pageCount));
   const limited = Math.max(512, Math.min(1280, calculated));
   return Math.max(512, Math.floor(limited / 32) * 32);
+}
+
+async function captureVisibleTabSafely(windowId) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const waitMs = Math.max(0, MIN_CAPTURE_INTERVAL_MS - (Date.now() - lastCaptureAt));
+    if (waitMs) await sleep(waitMs);
+    try {
+      lastCaptureAt = Date.now();
+      return await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
+    } catch (error) {
+      const isQuotaError = /MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND|quota/i.test(error.message || String(error));
+      if (!isQuotaError || attempt === 4) throw error;
+      await sleep(1000 * (attempt + 1));
+    }
+  }
+  throw new Error("화면 캡처 호출 제한으로 이미지를 가져오지 못했습니다.");
 }
 
 async function cropScreenshot(dataUrl, rect, targetWidth) {
@@ -82,7 +100,7 @@ async function captureSlides(tab) {
     if (rect.x < -2 || rect.y < -2 || rect.x + rect.width > rect.viewportWidth + 2 || rect.y + rect.height > rect.viewportHeight + 2) {
       throw new Error(`${index + 1}페이지의 첫 번째 img가 화면에 완전히 보이지 않아 대체 캡처할 수 없습니다.`);
     }
-    const screenshot = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+    const screenshot = await captureVisibleTabSafely(tab.windowId);
     images.push(await cropScreenshot(screenshot, rect, targetWidth));
   }
 
@@ -133,4 +151,3 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   });
   return true;
 });
-
