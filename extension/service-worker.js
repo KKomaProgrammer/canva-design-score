@@ -1,9 +1,69 @@
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const MIN_CAPTURE_INTERVAL_MS = 850;
+const MAX_HISTORY_ITEMS = 40;
+const MAX_HISTORY_BYTES = 3 * 1024 * 1024;
+const MAX_TRASH_ITEMS = 60;
+const MAX_TRASH_BYTES = 3 * 1024 * 1024;
 let lastCaptureAt = 0;
+let historyMutation = Promise.resolve();
 
 async function setState(state) {
   await chrome.storage.local.set({ analysisState: { updatedAt: Date.now(), ...state } });
+}
+
+function collectionBytes(items) {
+  return new TextEncoder().encode(JSON.stringify(items)).byteLength;
+}
+
+function trimCollection(items, maxItems, maxBytes) {
+  const removed = [];
+  while (items.length > maxItems || (items.length > 1 && collectionBytes(items) > maxBytes)) {
+    removed.push(items.pop());
+  }
+  return removed;
+}
+
+function addToTrash(trash, entries) {
+  const now = Date.now();
+  const moved = entries.map(entry => ({ ...entry, trashedAt: now }));
+  const nextTrash = [...moved, ...trash];
+  trimCollection(nextTrash, MAX_TRASH_ITEMS, MAX_TRASH_BYTES);
+  return nextTrash;
+}
+
+function queueHistoryMutation(operation) {
+  const next = historyMutation.then(operation, operation);
+  historyMutation = next.catch(() => {});
+  return next;
+}
+
+async function saveHistory(result) {
+  return queueHistoryMutation(async () => {
+    const stored = await chrome.storage.local.get({ analysisHistory: [], analysisTrash: [] });
+    const entry = {
+      id: crypto.randomUUID(),
+      createdAt: Date.now(),
+      title: result.presentation_title || "제목 없는 프레젠테이션",
+      score: result.deck_score,
+      grade: result.deck_grade,
+      result
+    };
+    const history = [entry, ...stored.analysisHistory];
+    const evicted = trimCollection(history, MAX_HISTORY_ITEMS, MAX_HISTORY_BYTES);
+    const analysisTrash = addToTrash(stored.analysisTrash, evicted);
+    await chrome.storage.local.set({ analysisHistory: history, analysisTrash });
+  });
+}
+
+async function moveHistoryToTrash(id) {
+  return queueHistoryMutation(async () => {
+    const stored = await chrome.storage.local.get({ analysisHistory: [], analysisTrash: [] });
+    const moving = id ? stored.analysisHistory.filter(entry => entry.id === id) : stored.analysisHistory;
+    const analysisHistory = id ? stored.analysisHistory.filter(entry => entry.id !== id) : [];
+    const analysisTrash = addToTrash(stored.analysisTrash, moving);
+    await chrome.storage.local.set({ analysisHistory, analysisTrash });
+    return analysisHistory;
+  });
 }
 
 function sendToTab(tabId, message) {
@@ -133,11 +193,17 @@ async function runAnalysis(settings) {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || `API 오류 (${response.status})`);
+    const result = { ...data, presentation_title: title };
+    try {
+      await saveHistory(result);
+    } catch (historyError) {
+      console.warn("Canva Design Score history save failed", historyError);
+    }
     await setState({
       status: "done",
       percent: 100,
       message: "평가 완료",
-      result: { ...data, presentation_title: title }
+      result
     });
   } catch (error) {
     await setState({ status: "error", percent: 0, error: error.message || String(error) });
@@ -145,14 +211,28 @@ async function runAnalysis(settings) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type !== "START_ANALYSIS") return;
-  chrome.storage.local.get("analysisState").then(({ analysisState }) => {
-    if (analysisState?.status === "running" && Date.now() - analysisState.updatedAt < 5 * 60 * 1000) {
-      sendResponse({ ok: false, error: "이미 분석이 진행 중입니다." });
-      return;
-    }
-    sendResponse({ ok: true });
-    runAnalysis(message.settings);
-  });
-  return true;
+  if (message.type === "GET_HISTORY") {
+    chrome.storage.local.get({ analysisHistory: [] }).then(({ analysisHistory }) => sendResponse({ ok: true, history: analysisHistory }));
+    return true;
+  }
+  if (message.type === "DELETE_HISTORY") {
+    moveHistoryToTrash(message.id).then(history => sendResponse({ ok: true, history })).catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+  if (message.type === "DELETE_ALL_HISTORY") {
+    moveHistoryToTrash(null).then(history => sendResponse({ ok: true, history })).catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+  if (message.type === "START_ANALYSIS") {
+    chrome.storage.local.get("analysisState").then(async ({ analysisState }) => {
+      if (analysisState?.status === "running" && Date.now() - analysisState.updatedAt < 5 * 60 * 1000) {
+        sendResponse({ ok: false, error: "이미 분석이 진행 중입니다." });
+        return;
+      }
+      await setState({ status: "running", percent: 1, message: "새 분석 준비 중" });
+      sendResponse({ ok: true });
+      runAnalysis(message.settings);
+    });
+    return true;
+  }
 });
