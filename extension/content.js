@@ -8,6 +8,10 @@
     return pages;
   }
 
+  function presentationTitle() {
+    return document.querySelector("input.aWBg0w")?.value?.trim() || document.title || "Canva 디자인 평가 결과";
+  }
+
   async function firstImage(page) {
     page.scrollIntoView({ behavior: "instant", block: "center", inline: "center" });
     const startedAt = Date.now();
@@ -57,10 +61,15 @@
       const pages = findPages();
       sendResponse({
         count: pages.length,
-        title: document.title,
+        title: presentationTitle(),
         selector: ".JFv1rQ",
         imagesNow: pages.filter(page => page.querySelector("img")).length
       });
+      return;
+    }
+
+    if (message.type === "GET_PRESENTATION_TITLE") {
+      sendResponse({ title: presentationTitle() });
       return;
     }
 
@@ -96,4 +105,3 @@
     }
   });
 })();
-
