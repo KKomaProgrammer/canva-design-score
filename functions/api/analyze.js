@@ -1,5 +1,5 @@
-const MAX_BODY_BYTES = 24 * 1024 * 1024;
-const MAX_SLIDES = 30;
+const MAX_BODY_BYTES = 90 * 1024 * 1024;
+const MAX_SLIDES = 100;
 const MODELS = new Set(["gpt-5.6-luna", "gpt-5.6-terra"]);
 
 const rubric = {
