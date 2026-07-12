@@ -66,6 +66,27 @@ async function moveHistoryToTrash(id) {
   });
 }
 
+async function restoreHistoryFromTrash(id) {
+  return queueHistoryMutation(async () => {
+    const stored = await chrome.storage.local.get({ analysisHistory: [], analysisTrash: [] });
+    const restoring = id ? stored.analysisTrash.filter(entry => entry.id === id) : stored.analysisTrash;
+    let analysisTrash = id ? stored.analysisTrash.filter(entry => entry.id !== id) : [];
+    const restored = restoring
+      .map(entry => {
+        const cleanEntry = { ...entry };
+        delete cleanEntry.trashedAt;
+        return cleanEntry;
+      })
+      .sort((a, b) => b.createdAt - a.createdAt);
+    const restoredIds = new Set(restored.map(entry => entry.id));
+    const analysisHistory = [...restored, ...stored.analysisHistory.filter(entry => !restoredIds.has(entry.id))];
+    const evicted = trimCollection(analysisHistory, MAX_HISTORY_ITEMS, MAX_HISTORY_BYTES);
+    analysisTrash = addToTrash(analysisTrash, evicted);
+    await chrome.storage.local.set({ analysisHistory, analysisTrash });
+    return { history: analysisHistory, trash: analysisTrash };
+  });
+}
+
 function sendToTab(tabId, message) {
   return chrome.tabs.sendMessage(tabId, message);
 }
@@ -215,12 +236,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.storage.local.get({ analysisHistory: [] }).then(({ analysisHistory }) => sendResponse({ ok: true, history: analysisHistory }));
     return true;
   }
+  if (message.type === "GET_TRASH") {
+    chrome.storage.local.get({ analysisTrash: [] }).then(({ analysisTrash }) => sendResponse({ ok: true, trash: analysisTrash }));
+    return true;
+  }
   if (message.type === "DELETE_HISTORY") {
     moveHistoryToTrash(message.id).then(history => sendResponse({ ok: true, history })).catch(error => sendResponse({ ok: false, error: error.message }));
     return true;
   }
   if (message.type === "DELETE_ALL_HISTORY") {
     moveHistoryToTrash(null).then(history => sendResponse({ ok: true, history })).catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+  if (message.type === "RESTORE_HISTORY") {
+    restoreHistoryFromTrash(message.id).then(result => sendResponse({ ok: true, ...result })).catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+  if (message.type === "RESTORE_ALL_HISTORY") {
+    restoreHistoryFromTrash(null).then(result => sendResponse({ ok: true, ...result })).catch(error => sendResponse({ ok: false, error: error.message }));
     return true;
   }
   if (message.type === "START_ANALYSIS") {
