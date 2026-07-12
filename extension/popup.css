@@ -64,7 +64,9 @@ header p {
 }
 .history-button svg,
 .icon-button svg,
-.history-delete svg {
+.history-delete svg,
+.history-restore svg,
+.trash-button svg {
   width: 19px;
   height: 19px;
   fill: none;
@@ -91,6 +93,7 @@ header p {
   pointer-events: auto;
 }
 .history-panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -132,6 +135,10 @@ header p {
   background: #fff0f3;
   font-size: 10px;
 }
+.delete-all.restore-mode {
+  color: #376f62;
+  background: #e8f8f3;
+}
 .icon-button {
   display: grid;
   place-items: center;
@@ -144,6 +151,7 @@ header p {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  padding-bottom: 48px;
 }
 .history-card {
   position: relative;
@@ -186,9 +194,41 @@ header p {
   background: #fff1f3;
   transform: translateY(-50%);
 }
-.history-delete svg {
+.history-restore {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  display: grid;
+  place-items: center;
+  width: 29px;
+  height: 29px;
+  color: #36796a;
+  background: #e9f8f3;
+  transform: translateY(-50%);
+}
+.history-delete svg,
+.history-restore svg {
   width: 16px;
   height: 16px;
+}
+.trash-button {
+  position: absolute;
+  right: 17px;
+  bottom: 17px;
+  display: grid;
+  place-items: center;
+  width: 39px;
+  height: 39px;
+  border: 1px solid #dfd8ec;
+  border-radius: 13px;
+  color: #76526a;
+  background: #fff8fae8;
+  box-shadow: 0 10px 26px #2d1a401f;
+  backdrop-filter: blur(8px);
+}
+.trash-button:hover {
+  background: #f8eaf0;
+  transform: translateY(-1px);
 }
 .history-empty {
   display: grid;
