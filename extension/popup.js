@@ -5,6 +5,10 @@ let currentResult = null;
 let historyEntries = [];
 let historyMode = "history";
 
+chrome.runtime.onMessage.addListener(message => {
+  if (message.type === "CLOSE_POPUP_FOR_CAPTURE") window.close();
+});
+
 async function loadSettings() {
   const saved = await chrome.storage.sync.get({ endpoint: DEFAULT_ENDPOINT, token: "", model: "gpt-5.6-luna" });
   $("#endpoint").value = saved.endpoint;
