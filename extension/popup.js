@@ -2,6 +2,7 @@ const $ = selector => document.querySelector(selector);
 const DEFAULT_ENDPOINT = "https://canva-design-score.pages.dev/api/analyze";
 let pollTimer;
 let currentResult = null;
+let historyEntries = [];
 
 async function loadSettings() {
   const saved = await chrome.storage.sync.get({ endpoint: DEFAULT_ENDPOINT, token: "", model: "gpt-5.6-luna" });
@@ -78,6 +79,52 @@ async function downloadSvg() {
   }
 }
 
+function historyDeleteIcon() {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg>`;
+}
+
+function renderHistoryList() {
+  const listTarget = $("#historyList");
+  if (!historyEntries.length) {
+    listTarget.innerHTML = `<div class="history-empty">저장된 분석 기록이 없습니다.</div>`;
+    return;
+  }
+  listTarget.innerHTML = historyEntries.map(entry => `<article class="history-card" data-history-id="${escapeHtml(entry.id)}" tabindex="0"><div class="history-name" title="${escapeHtml(entry.title)}">${escapeHtml(entry.title)}</div><div class="history-score">${Math.round(entry.score)}점 · ${escapeHtml(entry.grade)}</div><button class="history-delete" data-delete-id="${escapeHtml(entry.id)}" title="기록 삭제" aria-label="기록 삭제">${historyDeleteIcon()}</button></article>`).join("");
+}
+
+async function loadHistory() {
+  const response = await chrome.runtime.sendMessage({ type: "GET_HISTORY" });
+  if (!response?.ok) throw new Error(response?.error || "분석 기록을 불러오지 못했습니다.");
+  historyEntries = response.history || [];
+  renderHistoryList();
+}
+
+async function openHistory() {
+  $("#historyOverlay").classList.add("open");
+  $("#historyOverlay").setAttribute("aria-hidden", "false");
+  await loadHistory();
+}
+
+function closeHistory() {
+  $("#historyOverlay").classList.remove("open");
+  $("#historyOverlay").setAttribute("aria-hidden", "true");
+}
+
+async function deleteHistory(id) {
+  const response = await chrome.runtime.sendMessage({ type: "DELETE_HISTORY", id });
+  if (!response?.ok) throw new Error(response?.error || "기록을 삭제하지 못했습니다.");
+  historyEntries = response.history || [];
+  renderHistoryList();
+}
+
+async function deleteAllHistory() {
+  if (!historyEntries.length || !confirm("모든 분석 기록을 휴지통으로 이동할까요?")) return;
+  const response = await chrome.runtime.sendMessage({ type: "DELETE_ALL_HISTORY" });
+  if (!response?.ok) throw new Error(response?.error || "기록을 삭제하지 못했습니다.");
+  historyEntries = [];
+  renderHistoryList();
+}
+
 function renderResult(data) {
   currentResult = data;
   const target = $("#result");
@@ -116,16 +163,57 @@ $("#analyze").addEventListener("click", async () => {
   try {
     clearTimeout(pollTimer);
     $("#error").classList.add("hidden");
-    $("#result").classList.add("hidden");
-    $("#export").classList.add("hidden");
+    $("#analyze").disabled = true;
+    $("#progress").classList.remove("hidden");
+    $("#progress i").style.width = "3%";
+    $("#progress p").textContent = "새 분석 준비 중";
     const settings = await saveSettings();
     const response = await chrome.runtime.sendMessage({ type: "START_ANALYSIS", settings });
     if (!response?.ok) throw new Error(response?.error || "분석을 시작할 수 없습니다.");
     poll();
   } catch (error) {
+    $("#analyze").disabled = false;
+    $("#progress").classList.add("hidden");
     $("#error").textContent = error.message;
     $("#error").classList.remove("hidden");
   }
+});
+
+$("#historyButton").addEventListener("click", () => {
+  openHistory().catch(error => {
+    $("#error").textContent = error.message;
+    $("#error").classList.remove("hidden");
+  });
+});
+
+$("#closeHistory").addEventListener("click", closeHistory);
+$("#historyOverlay").addEventListener("click", event => {
+  if (event.target === $("#historyOverlay")) closeHistory();
+});
+
+$("#historyList").addEventListener("click", event => {
+  const deleteButton = event.target.closest("[data-delete-id]");
+  if (deleteButton) {
+    deleteHistory(deleteButton.dataset.deleteId).catch(error => {
+      $("#error").textContent = error.message;
+      $("#error").classList.remove("hidden");
+    });
+    return;
+  }
+  const card = event.target.closest("[data-history-id]");
+  if (!card) return;
+  const entry = historyEntries.find(item => item.id === card.dataset.historyId);
+  if (!entry?.result) return;
+  renderResult(entry.result);
+  closeHistory();
+  document.body.scrollTo({ top: $("#result").offsetTop - 8, behavior: "smooth" });
+});
+
+$("#deleteAllHistory").addEventListener("click", () => {
+  deleteAllHistory().catch(error => {
+    $("#error").textContent = error.message;
+    $("#error").classList.remove("hidden");
+  });
 });
 
 $("#export").addEventListener("click", async () => {
