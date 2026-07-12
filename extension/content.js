@@ -95,6 +95,7 @@
         } catch (error) {
           sendResponse({
             fallbackRect: imageRect(image),
+            imageSrc: image.currentSrc || image.src || "",
             naturalWidth: image.naturalWidth,
             naturalHeight: image.naturalHeight,
             canvasError: error.message
