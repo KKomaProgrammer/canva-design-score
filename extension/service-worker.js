@@ -133,7 +133,12 @@ async function runAnalysis(settings) {
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || `API 오류 (${response.status})`);
-    await setState({ status: "done", percent: 100, message: "평가 완료", result: data });
+    await setState({
+      status: "done",
+      percent: 100,
+      message: "평가 완료",
+      result: { ...data, presentation_title: title }
+    });
   } catch (error) {
     await setState({ status: "error", percent: 0, error: error.message || String(error) });
   }
