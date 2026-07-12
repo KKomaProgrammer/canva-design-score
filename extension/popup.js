@@ -3,6 +3,7 @@ const DEFAULT_ENDPOINT = "https://canva-design-score.pages.dev/api/analyze";
 let pollTimer;
 let currentResult = null;
 let historyEntries = [];
+let historyMode = "history";
 
 async function loadSettings() {
   const saved = await chrome.storage.sync.get({ endpoint: DEFAULT_ENDPOINT, token: "", model: "gpt-5.6-luna" });
@@ -83,23 +84,53 @@ function historyDeleteIcon() {
   return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg>`;
 }
 
+function historyRestoreIcon() {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8v5h5M5.5 13a7 7 0 1 0 1.4-6.1L4 9"/></svg>`;
+}
+
+function trashIcon() {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg>`;
+}
+
+function backIcon() {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6M9 12h10"/></svg>`;
+}
+
+function updateHistoryModeUi() {
+  const trashMode = historyMode === "trash";
+  $("#historyTitle").textContent = trashMode ? "휴지통" : "분석 기록";
+  $("#historySubtitle").textContent = trashMode ? "삭제된 기록 · 복구 가능" : "저장된 프레젠테이션";
+  $("#deleteAllHistory").textContent = trashMode ? "모두 복구" : "모두 삭제";
+  $("#deleteAllHistory").classList.toggle("restore-mode", trashMode);
+  $("#trashButton").innerHTML = trashMode ? backIcon() : trashIcon();
+  $("#trashButton").title = trashMode ? "분석 기록으로 돌아가기" : "휴지통";
+  $("#trashButton").setAttribute("aria-label", $("#trashButton").title);
+}
+
 function renderHistoryList() {
   const listTarget = $("#historyList");
   if (!historyEntries.length) {
-    listTarget.innerHTML = `<div class="history-empty">저장된 분석 기록이 없습니다.</div>`;
+    listTarget.innerHTML = `<div class="history-empty">${historyMode === "trash" ? "휴지통이 비어 있습니다." : "저장된 분석 기록이 없습니다."}</div>`;
     return;
   }
-  listTarget.innerHTML = historyEntries.map(entry => `<article class="history-card" data-history-id="${escapeHtml(entry.id)}" tabindex="0"><div class="history-name" title="${escapeHtml(entry.title)}">${escapeHtml(entry.title)}</div><div class="history-score">${Math.round(entry.score)}점 · ${escapeHtml(entry.grade)}</div><button class="history-delete" data-delete-id="${escapeHtml(entry.id)}" title="기록 삭제" aria-label="기록 삭제">${historyDeleteIcon()}</button></article>`).join("");
+  listTarget.innerHTML = historyEntries.map(entry => {
+    const action = historyMode === "trash"
+      ? `<button class="history-restore" data-restore-id="${escapeHtml(entry.id)}" title="기록 복구" aria-label="기록 복구">${historyRestoreIcon()}</button>`
+      : `<button class="history-delete" data-delete-id="${escapeHtml(entry.id)}" title="기록 삭제" aria-label="기록 삭제">${historyDeleteIcon()}</button>`;
+    return `<article class="history-card" data-history-id="${escapeHtml(entry.id)}" tabindex="0"><div class="history-name" title="${escapeHtml(entry.title)}">${escapeHtml(entry.title)}</div><div class="history-score">${Math.round(entry.score)}점 · ${escapeHtml(entry.grade)}</div>${action}</article>`;
+  }).join("");
 }
 
 async function loadHistory() {
-  const response = await chrome.runtime.sendMessage({ type: "GET_HISTORY" });
+  updateHistoryModeUi();
+  const response = await chrome.runtime.sendMessage({ type: historyMode === "trash" ? "GET_TRASH" : "GET_HISTORY" });
   if (!response?.ok) throw new Error(response?.error || "분석 기록을 불러오지 못했습니다.");
-  historyEntries = response.history || [];
+  historyEntries = historyMode === "trash" ? (response.trash || []) : (response.history || []);
   renderHistoryList();
 }
 
 async function openHistory() {
+  historyMode = "history";
   $("#historyOverlay").classList.add("open");
   $("#historyOverlay").setAttribute("aria-hidden", "false");
   await loadHistory();
@@ -123,6 +154,26 @@ async function deleteAllHistory() {
   if (!response?.ok) throw new Error(response?.error || "기록을 삭제하지 못했습니다.");
   historyEntries = [];
   renderHistoryList();
+}
+
+async function restoreHistory(id) {
+  const response = await chrome.runtime.sendMessage({ type: "RESTORE_HISTORY", id });
+  if (!response?.ok) throw new Error(response?.error || "기록을 복구하지 못했습니다.");
+  historyEntries = response.trash || [];
+  renderHistoryList();
+}
+
+async function restoreAllHistory() {
+  if (!historyEntries.length) return;
+  const response = await chrome.runtime.sendMessage({ type: "RESTORE_ALL_HISTORY" });
+  if (!response?.ok) throw new Error(response?.error || "기록을 복구하지 못했습니다.");
+  historyEntries = response.trash || [];
+  renderHistoryList();
+}
+
+async function runHistoryBulkAction() {
+  if (historyMode === "trash") return restoreAllHistory();
+  return deleteAllHistory();
 }
 
 function renderResult(data) {
@@ -192,6 +243,14 @@ $("#historyOverlay").addEventListener("click", event => {
 });
 
 $("#historyList").addEventListener("click", event => {
+  const restoreButton = event.target.closest("[data-restore-id]");
+  if (restoreButton) {
+    restoreHistory(restoreButton.dataset.restoreId).catch(error => {
+      $("#error").textContent = error.message;
+      $("#error").classList.remove("hidden");
+    });
+    return;
+  }
   const deleteButton = event.target.closest("[data-delete-id]");
   if (deleteButton) {
     deleteHistory(deleteButton.dataset.deleteId).catch(error => {
@@ -210,7 +269,15 @@ $("#historyList").addEventListener("click", event => {
 });
 
 $("#deleteAllHistory").addEventListener("click", () => {
-  deleteAllHistory().catch(error => {
+  runHistoryBulkAction().catch(error => {
+    $("#error").textContent = error.message;
+    $("#error").classList.remove("hidden");
+  });
+});
+
+$("#trashButton").addEventListener("click", () => {
+  historyMode = historyMode === "trash" ? "history" : "trash";
+  loadHistory().catch(error => {
     $("#error").textContent = error.message;
     $("#error").classList.remove("hidden");
   });
