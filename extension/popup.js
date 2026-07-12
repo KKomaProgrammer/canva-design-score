@@ -3,17 +3,16 @@ const DEFAULT_ENDPOINT = "https://canva-design-score.pages.dev/api/analyze";
 let pollTimer;
 
 async function loadSettings() {
-  const saved = await chrome.storage.sync.get({ endpoint: DEFAULT_ENDPOINT, token: "", model: "gpt-5.6-luna", width: 960 });
+  const saved = await chrome.storage.sync.get({ endpoint: DEFAULT_ENDPOINT, token: "", model: "gpt-5.6-luna" });
   $("#endpoint").value = saved.endpoint;
   $("#token").value = saved.token;
   $("#model").value = saved.model;
-  $("#width").value = String(saved.width);
 }
 
 async function saveSettings() {
   const endpoint = $("#endpoint").value.trim().replace(/\/$/, "");
   if (!/^https:\/\//.test(endpoint)) throw new Error("API 주소는 https://로 시작해야 합니다.");
-  const settings = { endpoint, token: $("#token").value.trim(), model: $("#model").value, width: Number($("#width").value) };
+  const settings = { endpoint, token: $("#token").value.trim(), model: $("#model").value };
   await chrome.storage.sync.set(settings);
   return settings;
 }
