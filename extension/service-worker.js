@@ -218,6 +218,7 @@ async function getActiveEditorTab() {
 
 async function captureSlides(tab) {
   const info = await getPageInfo(tab.id);
+  if (info?.error) throw new Error(info.error);
   if (!info?.count) {
     throw new Error(".JFv1rQ 요소를 찾지 못했습니다. Canva의 페이지 목록이 열린 상태에서 다시 시도해 주세요.");
   }
@@ -227,8 +228,8 @@ async function captureSlides(tab) {
   for (let index = 0; index < info.count; index++) {
     await setState({
       status: "running",
-      percent: Math.round((index / info.count) * 65),
-      message: `${index + 1}/${info.count} 페이지의 첫 번째 img를 ${targetWidth}px PNG로 변환 중`
+      percent: 12 + Math.round((index / info.count) * 53),
+      message: `${index + 1}/${info.count} 페이지 전체 미리보기를 ${targetWidth}px PNG로 변환 중`
     });
     const exported = await sendToTab(tab.id, { type: "EXPORT_PAGE_IMAGE", index, targetWidth });
     if (exported?.error) throw new Error(exported.error);
@@ -245,12 +246,12 @@ async function captureSlides(tab) {
       }
     }
     const rect = exported?.fallbackRect;
-    if (!rect) throw new Error(`${index + 1}페이지의 첫 번째 img를 PNG로 변환하지 못했습니다.`);
+    if (!rect) throw new Error(`${index + 1}페이지의 전체 미리보기를 PNG로 변환하지 못했습니다.`);
     await chrome.runtime.sendMessage({ type: "CLOSE_POPUP_FOR_CAPTURE" }).catch(() => {});
     await sleep(500);
     await sleep(120);
     if (rect.x < -2 || rect.y < -2 || rect.x + rect.width > rect.viewportWidth + 2 || rect.y + rect.height > rect.viewportHeight + 2) {
-      throw new Error(`${index + 1}페이지의 첫 번째 img가 화면에 완전히 보이지 않아 대체 캡처할 수 없습니다.`);
+      throw new Error(`${index + 1}페이지의 전체 미리보기가 화면에 완전히 보이지 않아 대체 캡처할 수 없습니다.`);
     }
     const screenshot = await captureVisibleTabSafely(tab.windowId);
     images.push(await cropScreenshot(screenshot, rect, targetWidth));
@@ -300,6 +301,10 @@ async function runAnalysis(settings) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "PAGE_LOAD_PROGRESS") {
+    setState({ status: "running", percent: message.percent, message: message.message }).then(() => sendResponse({ ok: true }));
+    return true;
+  }
   if (message.type === "GET_HISTORY") {
     chrome.storage.local.get({ analysisHistory: [] }).then(({ analysisHistory }) => sendResponse({ ok: true, history: analysisHistory }));
     return true;
