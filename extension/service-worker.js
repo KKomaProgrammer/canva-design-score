@@ -176,6 +176,29 @@ async function getPageInfo(tabId) {
   }
 }
 
+async function getActiveEditorTab() {
+  const queries = [
+    { active: true, currentWindow: true },
+    { active: true, lastFocusedWindow: true },
+    { active: true }
+  ];
+  for (const query of queries) {
+    const tabs = await chrome.tabs.query(query);
+    const canvaTab = tabs.find(tab => {
+      if (!tab.id) return false;
+      try {
+        return /(^|\.)canva\.com$/i.test(new URL(tab.url || tab.pendingUrl || "https://invalid.local").hostname);
+      } catch {
+        return false;
+      }
+    });
+    if (canvaTab) return canvaTab;
+    const usableTab = tabs.find(tab => tab.id);
+    if (usableTab && !(usableTab.url || "").startsWith("chrome-extension://")) return usableTab;
+  }
+  throw new Error("활성화된 Canva 탭을 찾지 못했습니다.");
+}
+
 async function captureSlides(tab) {
   const info = await getPageInfo(tab.id);
   if (!info?.count) {
@@ -224,10 +247,7 @@ async function captureSlides(tab) {
 
 async function runAnalysis(settings) {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id || !/^https:\/\/www\.canva\.com\/design\//.test(tab.url || "")) {
-      throw new Error("Canva 디자인 편집 페이지에서 실행해 주세요.");
-    }
+    const tab = await getActiveEditorTab();
     await setState({ status: "running", percent: 2, message: ".JFv1rQ 페이지 요소 검색 중" });
     const { images, title, targetWidth } = await captureSlides(tab);
     await setState({
