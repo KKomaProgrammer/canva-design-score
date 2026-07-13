@@ -2,34 +2,212 @@
   if (window.__canvaDesignScoreContentLoaded) return;
   window.__canvaDesignScoreContentLoaded = true;
 
-  function findPages() {
-    const pages = [...document.querySelectorAll(".JFv1rQ")];
-    window.__canvaDesignScorePages = pages;
-    return pages;
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  let pageElements = [];
+  let pageImages = [];
+  let preparedPageCount = 0;
+  let preparationPromise = null;
+
+  function timelineRoot() {
+    return [...document.querySelectorAll(".PLXBxQ")]
+      .find(element => element.querySelector(".JFv1rQ")) || null;
+  }
+
+  function timelineScroller(root) {
+    if (!root) return null;
+    if (root.scrollWidth > root.clientWidth + 4) return root;
+    const candidates = [...root.querySelectorAll("div, ul")]
+      .filter(element => {
+        if (!element.querySelector(".JFv1rQ") || element.clientWidth < 40) return false;
+        const overflowX = getComputedStyle(element).overflowX;
+        return element.scrollWidth > element.clientWidth + 4 && /auto|hidden|scroll/.test(overflowX);
+      })
+      .sort((a, b) => (b.scrollWidth - b.clientWidth) - (a.scrollWidth - a.clientWidth));
+    return candidates[0] || root;
+  }
+
+  function pageNumber(page) {
+    const label = page.closest('[data-role="timeline-scene"]')?.getAttribute("aria-label") || "";
+    const match = label.match(/(\d+)/);
+    return match ? Number(match[1]) : 0;
+  }
+
+  function detectedPageCount(root) {
+    const numbers = [...root.querySelectorAll('[data-role="timeline-scene"]')]
+      .map(scene => Number((scene.getAttribute("aria-label") || "").match(/(\d+)/)?.[1] || 0))
+      .filter(Boolean);
+    return numbers.length ? Math.max(...numbers) : root.querySelectorAll(".JFv1rQ").length;
+  }
+
+  function pageThumbnailImage(page) {
+    const firstImage = page?.querySelector("img") || null;
+    return firstImage?.classList.contains("vmQN7A") ? firstImage : null;
+  }
+
+  function renderedPageReady(page) {
+    if (!page?.isConnected) return false;
+    const images = [...page.querySelectorAll("img")];
+    const hasRenderedContent = images.length > 0 || Boolean(page.querySelector("svg, canvas, p"));
+    return hasRenderedContent && images.every(image => image.complete && image.naturalWidth > 0 && image.naturalHeight > 0);
+  }
+
+  function collectTimelinePages(root) {
+    const pages = [...root.querySelectorAll(".JFv1rQ")];
+    pages.forEach((page, fallbackIndex) => {
+      const number = pageNumber(page);
+      const index = number ? number - 1 : fallbackIndex;
+      if (index < 0) return;
+      const image = pageThumbnailImage(page);
+      const existingPage = pageElements[index];
+      if (!existingPage || !existingPage.isConnected || image) pageElements[index] = page;
+      if (image) pageImages[index] = image;
+    });
+    preparedPageCount = Math.max(preparedPageCount, detectedPageCount(root), pageElements.length);
   }
 
   function presentationTitle() {
     return document.querySelector("input.aWBg0w")?.value?.trim() || document.title || "Canva 디자인 평가 결과";
   }
 
-  async function firstImage(page) {
-    page.scrollIntoView({ behavior: "instant", block: "center", inline: "center" });
-    const startedAt = Date.now();
-    while (Date.now() - startedAt < 4000) {
-      const image = page.querySelector("img");
-      if (image) {
-        if (!image.complete || !image.naturalWidth) {
-          try { await image.decode(); } catch {}
-        }
-        if (image.complete && image.naturalWidth > 0 && image.naturalHeight > 0) return image;
-      }
-      await new Promise(resolve => setTimeout(resolve, 120));
-    }
-    return null;
+  async function decodeImage(image, timeoutMs = 1200) {
+    if (image.complete && image.naturalWidth > 0 && image.naturalHeight > 0) return true;
+    try {
+      await Promise.race([
+        image.decode(),
+        sleep(timeoutMs).then(() => { throw new Error("이미지 로드 대기 시간 초과"); })
+      ]);
+    } catch {}
+    return image.complete && image.naturalWidth > 0 && image.naturalHeight > 0;
   }
 
-  function imageRect(image) {
-    const rect = image.getBoundingClientRect();
+  async function scrollTimelineTo(scroller, left) {
+    const maxLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+    const nextLeft = Math.max(0, Math.min(maxLeft, Math.round(left)));
+    try { scroller.scrollTo({ left: nextLeft, behavior: "auto" }); } catch { scroller.scrollLeft = nextLeft; }
+    if (Math.abs(scroller.scrollLeft - nextLeft) > 2) scroller.scrollLeft = nextLeft;
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await sleep(180);
+  }
+
+  function horizontallyVisible(page, scroller) {
+    if (!page?.isConnected) return false;
+    const pageRect = page.getBoundingClientRect();
+    const scrollerRect = scroller.getBoundingClientRect();
+    return pageRect.right > scrollerRect.left && pageRect.left < scrollerRect.right;
+  }
+
+  async function settleVisibleThumbnails(root, scroller) {
+    const deadline = Date.now() + 720;
+    do {
+      collectTimelinePages(root);
+      const visiblePages = pageElements.filter(page => horizontallyVisible(page, scroller));
+      const visibleImages = visiblePages.flatMap(page => [...page.querySelectorAll("img")]);
+      await Promise.all(visibleImages.map(image => decodeImage(image, 420)));
+      if (visiblePages.length && visiblePages.every(page => {
+        const thumbnail = pageThumbnailImage(page);
+        return (thumbnail?.complete && thumbnail.naturalWidth > 0) || renderedPageReady(page);
+      })) break;
+      await sleep(90);
+    } while (Date.now() < deadline);
+    collectTimelinePages(root);
+  }
+
+  function reportTimelineProgress(completedRatio, loaded, total) {
+    chrome.runtime.sendMessage({
+      type: "PAGE_LOAD_PROGRESS",
+      percent: 2 + Math.round(Math.max(0, Math.min(1, completedRatio)) * 10),
+      message: `.PLXBxQ 타임라인을 가로 스크롤하며 페이지 이미지 로드 중 (${loaded}/${total})`
+    }).catch(() => {});
+  }
+
+  async function sweepTimeline(root, scroller) {
+    pageElements = [];
+    pageImages = [];
+    preparedPageCount = 0;
+    collectTimelinePages(root);
+
+    for (let pass = 0; pass < 2; pass++) {
+      const maxLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+      const step = Math.max(120, Math.round(scroller.clientWidth * 0.72));
+      const positions = [];
+      if (pass === 0) {
+        for (let left = 0; left < maxLeft; left += step) positions.push(left);
+        positions.push(maxLeft);
+      } else {
+        for (let left = maxLeft; left > 0; left -= step) positions.push(left);
+        positions.push(0);
+      }
+
+      for (let positionIndex = 0; positionIndex < positions.length; positionIndex++) {
+        await scrollTimelineTo(scroller, positions[positionIndex]);
+        await settleVisibleThumbnails(root, scroller);
+        const loaded = pageImages.filter(image => image?.complete && image.naturalWidth > 0).length;
+        const ratio = (pass + ((positionIndex + 1) / positions.length)) / 2;
+        reportTimelineProgress(ratio, loaded, preparedPageCount);
+      }
+
+      const knownPages = pageElements.slice(0, preparedPageCount).filter(Boolean).length;
+      const loadedImages = pageImages.slice(0, preparedPageCount).filter(image => image?.complete && image.naturalWidth > 0).length;
+      if (knownPages === preparedPageCount && loadedImages === preparedPageCount) break;
+    }
+  }
+
+  async function preparePages() {
+    const root = timelineRoot();
+    if (!root) {
+      const pages = [...document.querySelectorAll(".JFv1rQ")];
+      pageElements = pages;
+      pageImages = pages.map(pageThumbnailImage);
+      preparedPageCount = pages.length;
+      return;
+    }
+    await sweepTimeline(root, timelineScroller(root));
+  }
+
+  async function ensurePagesPrepared() {
+    if (!preparationPromise) {
+      preparationPromise = preparePages().finally(() => { preparationPromise = null; });
+    }
+    await preparationPromise;
+  }
+
+  async function revealPage(index) {
+    const root = timelineRoot();
+    const scroller = timelineScroller(root);
+    let page = pageElements[index];
+    if (!root || !scroller) return page || null;
+
+    if (page?.isConnected) {
+      const pageRect = page.getBoundingClientRect();
+      const scrollerRect = scroller.getBoundingClientRect();
+      const targetLeft = scroller.scrollLeft + pageRect.left - scrollerRect.left - (scrollerRect.width - pageRect.width) / 2;
+      await scrollTimelineTo(scroller, targetLeft);
+    } else {
+      const maxLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+      const targetLeft = preparedPageCount > 1 ? maxLeft * index / (preparedPageCount - 1) : 0;
+      await scrollTimelineTo(scroller, targetLeft);
+    }
+
+    await settleVisibleThumbnails(root, scroller);
+    page = pageElements[index] || page;
+    return page || null;
+  }
+
+  async function pagePreview(index) {
+    let page = await revealPage(index);
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < 4000) {
+      const image = pageThumbnailImage(page) || pageImages[index] || null;
+      if (image && await decodeImage(image)) return { page, image };
+      if (renderedPageReady(page)) return { page, image: null };
+      page = await revealPage(index);
+      await sleep(120);
+    }
+    return { page, image: null };
+  }
+
+  function elementRect(element) {
+    const rect = element.getBoundingClientRect();
     return {
       x: rect.left,
       y: rect.top,
@@ -58,14 +236,26 @@
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "GET_PAGES") {
-      const pages = findPages();
-      sendResponse({
-        count: pages.length,
-        title: presentationTitle(),
-        selector: ".JFv1rQ",
-        imagesNow: pages.filter(page => page.querySelector("img")).length
-      });
-      return;
+      (async () => {
+        await ensurePagesPrepared();
+        const missingPages = [];
+        for (let index = 0; index < preparedPageCount; index++) {
+          if (!pageElements[index]) missingPages.push(index + 1);
+        }
+        if (missingPages.length) {
+          sendResponse({ error: `타임라인을 끝까지 스크롤했지만 ${missingPages.join(", ")}페이지를 찾지 못했습니다.` });
+          return;
+        }
+        sendResponse({
+          count: preparedPageCount,
+          title: presentationTitle(),
+          selector: ".JFv1rQ",
+          timelineSelector: ".PLXBxQ",
+          loadedPageImages: pageImages.slice(0, preparedPageCount).filter(image => image?.complete && image.naturalWidth > 0).length,
+          renderedPageFallbacks: pageElements.slice(0, preparedPageCount).filter((page, index) => page && !pageImages[index]).length
+        });
+      })().catch(error => sendResponse({ error: error.message || String(error) }));
+      return true;
     }
 
     if (message.type === "GET_PRESENTATION_TITLE") {
@@ -75,15 +265,17 @@
 
     if (message.type === "EXPORT_PAGE_IMAGE") {
       (async () => {
-        const pages = window.__canvaDesignScorePages || findPages();
-        const page = pages[message.index];
-        if (!page) {
+        if (!preparedPageCount) await ensurePagesPrepared();
+        const { page, image } = await pagePreview(message.index);
+        if (!page && !image) {
           sendResponse({ error: `${message.index + 1}페이지의 .JFv1rQ 요소를 찾지 못했습니다.` });
           return;
         }
-        const image = await firstImage(page);
         if (!image) {
-          sendResponse({ error: `${message.index + 1}페이지 .JFv1rQ 안의 첫 번째 img를 불러오지 못했습니다.` });
+          sendResponse({
+            fallbackRect: elementRect(page),
+            renderedPageFallback: true
+          });
           return;
         }
         try {
@@ -94,14 +286,14 @@
           });
         } catch (error) {
           sendResponse({
-            fallbackRect: imageRect(image),
+            fallbackRect: elementRect(image),
             imageSrc: image.currentSrc || image.src || "",
             naturalWidth: image.naturalWidth,
             naturalHeight: image.naturalHeight,
             canvasError: error.message
           });
         }
-      })();
+      })().catch(error => sendResponse({ error: error.message || String(error) }));
       return true;
     }
   });
