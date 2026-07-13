@@ -176,25 +176,42 @@ async function getPageInfo(tabId) {
   }
 }
 
+function tabUrl(tab) {
+  return tab?.url || tab?.pendingUrl || "";
+}
+
+function isBrowserInternalPage(url) {
+  return /^(?:about:|brave:|chrome:|chrome-extension:|chrome-untrusted:|devtools:|edge:|kiwi:|moz-extension:|opera:|vivaldi:)/i.test(url);
+}
+
+function assertSupportedActiveTab(tab) {
+  const url = tabUrl(tab);
+  if (isBrowserInternalPage(url)) {
+    throw new Error("브라우저 내부 페이지에서는 분석을 실행하지 않습니다. Canva 디자인 편집 탭으로 이동한 뒤 다시 시도해 주세요.");
+  }
+}
+
 async function getActiveEditorTab() {
   const queries = [
     { active: true, currentWindow: true },
     { active: true, lastFocusedWindow: true },
     { active: true }
   ];
-  for (const query of queries) {
+  for (let queryIndex = 0; queryIndex < queries.length; queryIndex++) {
+    const query = queries[queryIndex];
     const tabs = await chrome.tabs.query(query);
+    if (queryIndex === 0 && tabs[0]) assertSupportedActiveTab(tabs[0]);
     const canvaTab = tabs.find(tab => {
       if (!tab.id) return false;
       try {
-        return /(^|\.)canva\.com$/i.test(new URL(tab.url || tab.pendingUrl || "https://invalid.local").hostname);
+        return /(^|\.)canva\.com$/i.test(new URL(tabUrl(tab) || "https://invalid.local").hostname);
       } catch {
         return false;
       }
     });
     if (canvaTab) return canvaTab;
-    const usableTab = tabs.find(tab => tab.id);
-    if (usableTab && !(usableTab.url || "").startsWith("chrome-extension://")) return usableTab;
+    const usableTab = tabs.find(tab => tab.id && !isBrowserInternalPage(tabUrl(tab)));
+    if (usableTab) return usableTab;
   }
   throw new Error("활성화된 Canva 탭을 찾지 못했습니다.");
 }
