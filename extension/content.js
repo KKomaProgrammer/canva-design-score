@@ -1,5 +1,5 @@
 (() => {
-  const CONTENT_VERSION = "1.5.1";
+  const CONTENT_VERSION = "1.5.2";
   if (window.__canvaDesignScoreContentVersion === CONTENT_VERSION) return;
   window.__canvaDesignScoreContentVersion = CONTENT_VERSION;
 
@@ -219,6 +219,51 @@
     };
   }
 
+  function pageCloneFilter(page) {
+    return element => {
+      const tagName = element?.tagName || "";
+      if (tagName === "SCRIPT" || tagName === "NOSCRIPT") return true;
+      if (tagName === "LINK") {
+        const rel = (element.getAttribute("rel") || "").toLowerCase();
+        const as = (element.getAttribute("as") || "").toLowerCase();
+        if (rel === "modulepreload" || as === "script") return true;
+      }
+      try {
+        return element !== page && !element.contains(page) && !page.contains(element);
+      } catch {
+        return false;
+      }
+    };
+  }
+
+  function cleanClonedDocument(clonedDocument) {
+    clonedDocument
+      .querySelectorAll('script, noscript, link[rel="modulepreload"], link[as="script"]')
+      .forEach(element => element.remove());
+  }
+
+  async function withFrequentCanvasReads(operation) {
+    const prototype = globalThis.HTMLCanvasElement?.prototype;
+    const originalGetContext = prototype?.getContext;
+    if (typeof originalGetContext !== "function") return operation();
+    const patchedGetContext = function(type, options) {
+      if (type === "2d" && options === undefined) {
+        return originalGetContext.call(this, type, { willReadFrequently: true });
+      }
+      return originalGetContext.call(this, type, options);
+    };
+    try {
+      prototype.getContext = patchedGetContext;
+    } catch {
+      return operation();
+    }
+    try {
+      return await operation();
+    } finally {
+      if (prototype.getContext === patchedGetContext) prototype.getContext = originalGetContext;
+    }
+  }
+
   async function renderedPageToPng(page, targetWidth) {
     if (!page?.isConnected) throw new Error("페이지 미리보기 요소가 현재 문서에서 분리되었습니다.");
     if (typeof globalThis.html2canvas !== "function") throw new Error("페이지 내부 PNG 렌더러를 불러오지 못했습니다.");
@@ -231,16 +276,18 @@
     let firstError;
     for (const foreignObjectRendering of [false, true]) {
       try {
-        canvas = await globalThis.html2canvas(page, {
+        canvas = await withFrequentCanvasReads(() => globalThis.html2canvas(page, {
           allowTaint: false,
           backgroundColor: "#ffffff",
           foreignObjectRendering,
           imageTimeout: 6500,
+          ignoreElements: pageCloneFilter(page),
           logging: false,
+          onclone: cleanClonedDocument,
           removeContainer: true,
           scale,
           useCORS: true
-        });
+        }));
         if (canvas.width > 0 && canvas.height > 0) break;
       } catch (error) {
         firstError ||= error;
