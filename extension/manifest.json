@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Canva Design Score",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "Canva 프레젠테이션을 PNG로 캡처해 GPT-5.6으로 디자인 완성도를 평가합니다.",
   "permissions": ["activeTab", "downloads", "scripting", "storage", "tabs"],
   "host_permissions": ["https://www.canva.com/*", "https://*.canva.com/*", "https://*.pages.dev/*"],
   "background": { "service_worker": "service-worker.js" },
   "action": { "default_popup": "popup.html", "default_title": "Canva 디자인 평가" },
-  "content_scripts": [{ "matches": ["https://canva.com/*", "https://*.canva.com/*"], "js": ["content.js"], "run_at": "document_idle" }]
+  "content_scripts": [{ "matches": ["https://canva.com/*", "https://*.canva.com/*"], "js": ["vendor/html2canvas.min.js", "content.js"], "run_at": "document_idle" }]
 }
