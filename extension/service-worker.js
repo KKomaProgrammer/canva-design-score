@@ -106,13 +106,17 @@ function automaticImageWidth(pageCount) {
   return Math.max(320, Math.floor(limited / 32) * 32);
 }
 
-async function captureVisibleTabSafely(windowId) {
+async function captureVisibleTabSafely(tab) {
   for (let attempt = 0; attempt < 5; attempt++) {
     const waitMs = Math.max(0, MIN_CAPTURE_INTERVAL_MS - (Date.now() - lastCaptureAt));
     if (waitMs) await sleep(waitMs);
     try {
+      await chrome.tabs.update(tab.id, { active: true }).catch(() => {});
+      try { await chrome.windows.update(tab.windowId, { focused: true }); } catch {}
+      await sleep(120);
       lastCaptureAt = Date.now();
-      return await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
+      const captureWindowId = attempt % 2 === 0 ? tab.windowId : undefined;
+      return await chrome.tabs.captureVisibleTab(captureWindowId, { format: "png" });
     } catch (error) {
       const message = error.message || String(error);
       const isQuotaError = /MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND|quota/i.test(message);
@@ -171,7 +175,7 @@ async function getPageInfo(tabId) {
   try {
     return await sendToTab(tabId, { type: "GET_PAGES" });
   } catch {
-    await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["vendor/html2canvas.min.js", "content.js"] });
     return sendToTab(tabId, { type: "GET_PAGES" });
   }
 }
@@ -253,7 +257,7 @@ async function captureSlides(tab) {
     if (rect.x < -2 || rect.y < -2 || rect.x + rect.width > rect.viewportWidth + 2 || rect.y + rect.height > rect.viewportHeight + 2) {
       throw new Error(`${index + 1}페이지의 전체 미리보기가 화면에 완전히 보이지 않아 대체 캡처할 수 없습니다.`);
     }
-    const screenshot = await captureVisibleTabSafely(tab.windowId);
+    const screenshot = await captureVisibleTabSafely(tab);
     images.push(await cropScreenshot(screenshot, rect, targetWidth));
   }
 
