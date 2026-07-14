@@ -1,6 +1,7 @@
 (() => {
-  if (window.__canvaDesignScoreContentLoaded) return;
-  window.__canvaDesignScoreContentLoaded = true;
+  const CONTENT_VERSION = "1.5.1";
+  if (window.__canvaDesignScoreContentVersion === CONTENT_VERSION) return;
+  window.__canvaDesignScoreContentVersion = CONTENT_VERSION;
 
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   let pageElements = [];
@@ -218,6 +219,51 @@
     };
   }
 
+  async function renderedPageToPng(page, targetWidth) {
+    if (!page?.isConnected) throw new Error("페이지 미리보기 요소가 현재 문서에서 분리되었습니다.");
+    if (typeof globalThis.html2canvas !== "function") throw new Error("페이지 내부 PNG 렌더러를 불러오지 못했습니다.");
+    if (document.fonts?.ready) await Promise.race([document.fonts.ready, sleep(1400)]).catch(() => {});
+
+    const rect = page.getBoundingClientRect();
+    if (rect.width < 40 || rect.height < 24) throw new Error("페이지 미리보기 영역이 너무 작습니다.");
+    const scale = Math.max(1, targetWidth / rect.width);
+    let canvas;
+    let firstError;
+    for (const foreignObjectRendering of [false, true]) {
+      try {
+        canvas = await globalThis.html2canvas(page, {
+          allowTaint: false,
+          backgroundColor: "#ffffff",
+          foreignObjectRendering,
+          imageTimeout: 6500,
+          logging: false,
+          removeContainer: true,
+          scale,
+          useCORS: true
+        });
+        if (canvas.width > 0 && canvas.height > 0) break;
+      } catch (error) {
+        firstError ||= error;
+        canvas = null;
+      }
+    }
+    if (!canvas) throw firstError || new Error("페이지 내부 PNG 렌더링 결과가 비어 있습니다.");
+
+    const width = targetWidth;
+    const height = Math.max(1, Math.round(canvas.height * width / canvas.width));
+    if (canvas.width === width && canvas.height === height) return canvas.toDataURL("image/png");
+    const resized = document.createElement("canvas");
+    resized.width = width;
+    resized.height = height;
+    const context = resized.getContext("2d", { alpha: false });
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, width, height);
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.drawImage(canvas, 0, 0, width, height);
+    return resized.toDataURL("image/png");
+  }
+
   function imageToPng(image, targetWidth) {
     const ratio = image.naturalHeight / image.naturalWidth;
     const width = targetWidth;
@@ -272,10 +318,18 @@
           return;
         }
         if (!image) {
-          sendResponse({
-            fallbackRect: elementRect(page),
-            renderedPageFallback: true
-          });
+          try {
+            sendResponse({
+              dataUrl: await renderedPageToPng(page, message.targetWidth),
+              renderedPageInContent: true
+            });
+          } catch (renderError) {
+            sendResponse({
+              fallbackRect: elementRect(page),
+              renderedPageFallback: true,
+              renderError: renderError.message || String(renderError)
+            });
+          }
           return;
         }
         try {
@@ -285,13 +339,22 @@
             naturalHeight: image.naturalHeight
           });
         } catch (error) {
-          sendResponse({
-            fallbackRect: elementRect(image),
-            imageSrc: image.currentSrc || image.src || "",
-            naturalWidth: image.naturalWidth,
-            naturalHeight: image.naturalHeight,
-            canvasError: error.message
-          });
+          try {
+            sendResponse({
+              dataUrl: await renderedPageToPng(page, message.targetWidth),
+              renderedPageInContent: true,
+              canvasError: error.message
+            });
+          } catch (renderError) {
+            sendResponse({
+              fallbackRect: elementRect(image),
+              imageSrc: image.currentSrc || image.src || "",
+              naturalWidth: image.naturalWidth,
+              naturalHeight: image.naturalHeight,
+              canvasError: error.message,
+              renderError: renderError.message || String(renderError)
+            });
+          }
         }
       })().catch(error => sendResponse({ error: error.message || String(error) }));
       return true;
